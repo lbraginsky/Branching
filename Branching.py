@@ -84,4 +84,4 @@ def simulation(ndim, steps_per_update):
     ani = animation.FuncAnimation(fig, update, interval=1)
     plt.show()
 
-simulation(ndim=3, steps_per_update=10)
+simulation(ndim=2, steps_per_update=10)
