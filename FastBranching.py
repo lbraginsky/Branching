@@ -4,11 +4,7 @@ Created on Sep 3, 2017
 @author: lbraginsky
 '''
 
-from random import random, gauss
-import statistics as stat
-
-def brownian_step(x):
-    return tuple(v + gauss(0, 1) for v in x)
+import numpy as np
 
 class Branching(object):
 
@@ -16,19 +12,20 @@ class Branching(object):
         self.branch_prob = branch_prob
         self.fitness = fitness
         self.max_size = max_size
-        self.members = list(initial_population)
+        self.members = initial_population
         self.generation = 0
 
     def step(self):
         # Everybody moves
-        gen = [brownian_step(x) for x in self.members]
+        gen = self.members + np.random.normal(size=self.members.shape)
         # Everybody branches with luck
-        gen.extend([x for x in gen if random() < self.branch_prob(x)])
+        ind = np.random.uniform(size=gen.shape[0]) < self.branch_prob(gen)
+        gen = np.append(gen, gen[ind], axis=0)
         # Sort by fitness
-        gen.sort(key=self.fitness, reverse=True)
+        ind = np.argsort(self.fitness(gen))[::-1]
         # Truncate to max size
         # New generation becomes members
-        self.members = gen[:self.max_size]
+        self.members = gen[ind][:self.max_size]
         self.generation += 1
 
     def run(self, num_steps):
@@ -36,8 +33,8 @@ class Branching(object):
             self.step()
 
     def stats(self):
-        f = [self.fitness(x) for x in self.members]
-        return {"count": len(f), "min": min(f), "max": max(f), "avg": stat.mean(f), "std": stat.pstdev(f)}
+        f = self.fitness(self.members)
+        return {"count": len(f), "min": np.min(f), "max": np.max(f), "avg": np.mean(f), "std": np.std(f)}
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
@@ -45,14 +42,15 @@ from mpl_toolkits.mplot3d import Axes3D
 
 def simulation(ndim, steps_per_update):
 
-    euclidean_fitness = lambda x: sum(v**2 for v in x)**0.5
-    sumsq_fitness = lambda x: sum(v**2 for v in x)
-    sumabs_fitness = lambda x: sum(abs(v) for v in x)    
-    maxabs_fitness = lambda x: max(abs(v) for v in x)
-    
+    euclidean_fitness = lambda gen: np.sqrt(np.sum(gen**2, axis=1))
+    sumsq_fitness = lambda gen: np.sum(gen**2, axis=1)
+    sumabs_fitness = lambda gen: np.sum(abs(gen), axis=1)
+    maxabs_fitness = lambda gen: np.max(abs(gen), axis=1)
+    absprod_fitness = lambda gen: np.prod(abs(gen), axis=1)
+
     br = Branching(branch_prob=lambda x: 0.05,
                    fitness=euclidean_fitness,
-                   initial_population=[(0,)*ndim],
+                   initial_population=np.zeros(shape=(1, ndim)),
                    max_size=1000)
 
     if not ndim in [1, 2, 3]:
@@ -60,7 +58,7 @@ def simulation(ndim, steps_per_update):
 
     ax_lims = [(-50, 50)] * ndim
     def scaling():
-        d_lims = [(min(a), max(a)) for a in zip(*br.members)]
+        d_lims = list(zip(np.min(br.members, axis=0), np.max(br.members, axis=0)))
         if any(d[0] < a[0] or d[1] > a[1] for a, d in zip(ax_lims, d_lims)):
             r = max(b - a for a, b in d_lims) * 0.75
             for d in range(ndim):
@@ -104,7 +102,7 @@ def simulation(ndim, steps_per_update):
         ax.clear()
         scaling()
         scatter()
-        print("Generation: {}, stats: {}, time: {:.4}".
+        print("Generation: {}, stats: {}, time: {:.2}".
               format(br.generation, br.stats(), time.time() - t))
 
     ani = animation.FuncAnimation(fig, update, interval=1)
