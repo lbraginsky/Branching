@@ -4,13 +4,19 @@ Created on Sep 3, 2017
 @author: lbraginsky
 '''
 
+import matplotlib
+matplotlib.use("tkAgg")
+
 import numpy as np
 
 class Branching(object):
 
     def __init__(self, branch_prob, fitness, initial_population, max_size):
         self.branch_prob = branch_prob
-        self.fitness = fitness
+        try:
+            self.fitness, self.low_fit = fitness
+        except TypeError:
+            self.fitness, self.low_fit = fitness, False
         self.max_size = max_size
         self.members = initial_population
         self.generation = 0
@@ -19,10 +25,11 @@ class Branching(object):
         # Everybody moves
         gen = self.members + np.random.normal(size=self.members.shape)
         # Everybody branches with luck
-        ind = np.random.uniform(size=gen.shape[0]) < self.branch_prob(gen)
+        ind = np.random.uniform(size=gen.shape[0]) < self.branch_prob
         gen = np.append(gen, gen[ind], axis=0)
         # Sort by fitness
-        ind = np.argsort(self.fitness(gen))[::-1]
+        ind = np.argsort(self.fitness(gen))
+        if not self.low_fit: ind = ind[::-1]
         # Truncate to max size
         # New generation becomes members
         self.members = gen[ind][:self.max_size]
@@ -34,27 +41,18 @@ class Branching(object):
 
     def stats(self):
         f = self.fitness(self.members)
-        return {"count": len(f), "min": np.min(f), "max": np.max(f), "avg": np.mean(f), "std": np.std(f)}
+        return {"gen": self.generation, "count": len(f), "min": np.min(f), "max": np.max(f), "avg": np.mean(f), "std": np.std(f)}
 
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
 
-def simulation(ndim, steps_per_update):
-
-    euclidean_fitness = lambda gen: np.sqrt(np.sum(gen**2, axis=1))
-    sumsq_fitness = lambda gen: np.sum(gen**2, axis=1)
-    sumabs_fitness = lambda gen: np.sum(abs(gen), axis=1)
-    maxabs_fitness = lambda gen: np.max(abs(gen), axis=1)
-    absprod_fitness = lambda gen: np.prod(abs(gen), axis=1)
-
-    br = Branching(branch_prob=lambda x: 0.05,
-                   fitness=euclidean_fitness,
-                   initial_population=np.zeros(shape=(1, ndim)),
-                   max_size=1000)
+def simulation(ndim, steps_per_update, **br_kwargs):
 
     if not ndim in [1, 2, 3]:
         raise NotImplementedError("Cannot display {}-dimensions".format(ndim))
+
+    br = Branching(**br_kwargs)
 
     ax_lims = [(-50, 50)] * ndim
     def scaling():
@@ -79,9 +77,14 @@ def simulation(ndim, steps_per_update):
         
     def scatter_d2():
         x, y = zip(*br.members)
-        ax.scatter(x, y, marker='.')
+        ax.scatter(x, y, marker='.', s=10)
         ax.set_xlim(ax_lims[0])
         ax.set_ylim(ax_lims[1])
+        ax.annotate("Gen: {}".format(br.generation),
+            xy=(1, 0), xycoords='axes fraction',
+            xytext=(-10, 10), textcoords='offset pixels',
+            horizontalalignment='right',
+            verticalalignment='bottom')
 
     def scatter_d3():
         x, y, z = zip(*br.members)
@@ -95,28 +98,50 @@ def simulation(ndim, steps_per_update):
     fig = plt.figure(figsize=(9, 8))
     ax = plot()
 
-    import time
     def update(i):
+        import time        
         t = time.time()
         br.run(steps_per_update)
         ax.clear()
         scaling()
         scatter()
-        print("Generation: {}, stats: {}, time: {:.2}".
-              format(br.generation, br.stats(), time.time() - t))
+        print("{}, time: {:.2}".format(br.stats(), time.time() - t))
 
-    ani = animation.FuncAnimation(fig, update, interval=1)
+    ani = animation.FuncAnimation(fig, update, interval=1, 
+                                  init_func=lambda: None)
+
+    class Controller(object):
+        def __init__(self):
+            self.running = True
+        def on_key(self, event):
+            if event.key != ' ': return
+            if self.running:
+                ani.event_source.stop()
+            else:
+                ani.event_source.start()
+            self.running = not self.running
+
+    controller = Controller()
+    fig.canvas.mpl_connect('key_press_event', controller.on_key)
     plt.show()
 
-simulation(ndim=2, steps_per_update=1)
+euclidean_fitness = lambda gen: np.sqrt(np.sum(gen**2, axis=1))
+sumsq_fitness = lambda gen: np.sum(gen**2, axis=1)
+sumabs_fitness = lambda gen: np.sum(abs(gen), axis=1)
+maxabs_fitness = lambda gen: np.max(abs(gen), axis=1)
+absprod_fitness = lambda gen: np.prod(abs(gen), axis=1)
 
-import cProfile
-import pstats
+def sparsity_fitness_fun(gen, radius):
+    from scipy import spatial
+    tree = spatial.cKDTree(gen)
+    f = lambda p: len(tree.query_ball_point(p, r=radius))
+    counts = np.apply_along_axis(f, 1, gen)
+    return counts
+sparsity_fitness_r50 = lambda gen: sparsity_fitness_fun(gen, 50), True
 
-def profile(cmd):
-    profileName = 'profile'
-    cProfile.run(cmd, profileName)
-    p = pstats.Stats(profileName)
-    p.strip_dirs().sort_stats('time').print_stats()
-
-# profile("simulation(ndim=2, steps_per_update=1)")
+ndim = 2
+simulation(ndim, steps_per_update=1,
+           branch_prob=0.05,
+           fitness=euclidean_fitness,
+           initial_population=np.zeros(shape=(1, ndim)),
+           max_size=1000)
