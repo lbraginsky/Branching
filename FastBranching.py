@@ -47,12 +47,11 @@ import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 from mpl_toolkits.mplot3d import Axes3D
 
-def simulation(ndim, steps_per_update, **br_kwargs):
+def simulation(br, steps_per_update):
 
+    ndim = br.members.shape[1]
     if not ndim in [1, 2, 3]:
         raise NotImplementedError("Cannot display {}-dimensions".format(ndim))
-
-    br = Branching(**br_kwargs)
 
     ax_lims = [(-50, 50)] * ndim
     def scaling():
@@ -140,8 +139,8 @@ def sparsity_fitness_fun(gen, radius):
 sparsity_fitness_r50 = lambda gen: sparsity_fitness_fun(gen, 50), True
 
 ndim = 2
-simulation(ndim, steps_per_update=1,
-           branch_prob=0.05,
-           fitness=euclidean_fitness,
-           initial_population=np.zeros(shape=(1, ndim)),
-           max_size=1000)
+simulation(Branching(branch_prob=0.05,
+                     fitness=euclidean_fitness,
+                     initial_population=np.zeros(shape=(1, ndim)),
+                     max_size=1000),
+           steps_per_update=1)
