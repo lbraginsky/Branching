@@ -4,9 +4,6 @@ Created on Sep 3, 2017
 @author: lbraginsky
 '''
 
-import matplotlib
-matplotlib.use("tkAgg")
-
 import numpy as np
 
 class Branching(object):
@@ -97,31 +94,41 @@ def simulation(br, steps_per_update):
     fig = plt.figure(figsize=(9, 8))
     ax = plot()
 
-    def update(i):
-        import time        
-        t = time.time()
-        br.run(steps_per_update)
-        ax.clear()
-        scaling()
-        scatter()
-        print("{}, time: {:.2}".format(br.stats(), time.time() - t))
-
-    ani = animation.FuncAnimation(fig, update, interval=1, 
-                                  init_func=lambda: None)
+    class Controls(object): pass
+    controls = Controls()
 
     class Controller(object):
         def __init__(self):
             self.running = True
-        def on_key(self, event):
-            if event.key != ' ': return
+            self.steps = steps_per_update
+        def toggle_running(self, event):
             if self.running:
                 ani.event_source.stop()
             else:
                 ani.event_source.start()
             self.running = not self.running
+        def update_steps(self, event):
+            controller.steps = int(controls.steps.val)
 
     controller = Controller()
-    fig.canvas.mpl_connect('key_press_event', controller.on_key)
+
+    def update(i):
+        import time        
+        t = time.time()
+        br.run(controller.steps)
+        ax.clear()
+        scaling()
+        scatter()
+        print("{}, time: {:.2}".format(br.stats(), time.time() - t))
+
+    from matplotlib.widgets import Button, Slider
+    controls.tgl = Button(plt.axes([0.8, 0.02, 0.1, 0.04]), "Stop/Go")
+    controls.tgl.on_clicked(controller.toggle_running)
+    controls.steps = Slider(plt.axes([0.55, 0.03, 0.2, 0.02]), 'Steps', 1, 100, valinit=controller.steps, valfmt='%.0f')
+    controls.steps.on_changed(controller.update_steps)
+
+    ani = animation.FuncAnimation(fig, update, interval=1, init_func=lambda: None)
+
     plt.show()
 
 euclidean_fitness = lambda gen: np.sqrt(np.sum(gen**2, axis=1))
